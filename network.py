@@ -76,8 +76,7 @@ class Prototype1(Network):
         self.add_connection(inh_l2_connection, source="l2", target="l2")
 
         self.monitor = NetworkMonitor(self)
-        self.add_monitor(self.monitor, "monitor")
-
+        self.add_monitor(self.monitor, name="monitor")
         self.use_4_position = use_4_position
         self.n_input_channels = n_input_channels
         self.patch_shape = patch_shape

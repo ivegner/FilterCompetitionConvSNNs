@@ -50,7 +50,13 @@ if __name__ == "__main__":
         n_l2_features=n_l2_features,
     )
     if gpu:
-        network.to("cuda")
+        network = network.to(device)
+        
+        # mmm, fixing library bugs
+        for k, rec in network.monitor.recording.items():
+            for v in rec:
+                network.monitor.recording[k][v] = network.monitor.recording[k][v].cuda()
+
 
     # the dataloaders have to be out here for pickling for some reason
     train_dataloader = DataLoader(
@@ -66,7 +72,8 @@ if __name__ == "__main__":
             if step > n_train / batch_size:
                 break
             x, y = batch  # x: (batch, channels, height, width), y: (batch,)
-
+            if gpu:
+                x  = {k: v.cuda() for k, v in x.items()}
             # Run the network on the input.
             network.run(x, time_per_patch=time_per_patch)
 
