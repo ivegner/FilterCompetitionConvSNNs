@@ -1,4 +1,5 @@
 import os
+from matplotlib import pyplot as plt
 
 import torch
 from torch.utils.data import DataLoader
@@ -6,18 +7,19 @@ from tqdm import tqdm
 
 from datasets import make_emnist
 from network import Prototype1
-from visualization import visualize_spikes
+from visualization import visualize_spikes, visualize_image, visualize_patches
 
 if __name__ == "__main__":
     time_per_patch = 10
     use_4_position = True
     n_epochs = 10
-    patch_shape = (3, 3)
+    patch_shape = (5,5)
     n_filters = 32
     n_l1_features = 64
     n_l2_features = 64
-    n_train = 10
+    n_train = 1
     batch_size = 1  # TODO: look into batching
+    n_epochs = 1
 
     gpu = True
     seed = 1
@@ -29,7 +31,9 @@ if __name__ == "__main__":
         device = "cpu"
         if gpu:
             gpu = False
-    torch.set_num_threads(os.cpu_count() - 1)
+
+    num_workers = os.cpu_count() - 1
+    torch.set_num_threads(num_workers)
     print("Running on Device = ", device)
 
     train_data, val_data = make_emnist(
@@ -52,30 +56,26 @@ if __name__ == "__main__":
     if gpu:
         network = network.to(device)
 
-        # mmm, fixing library bugs
-        for k, rec in network.monitor.recording.items():
-            for v in rec:
-                network.monitor.recording[k][v] = network.monitor.recording[k][v].cuda()
-
-
     # the dataloaders have to be out here for pickling for some reason
     train_dataloader = DataLoader(
-        train_data, batch_size=batch_size, shuffle=True, num_workers=os.cpu_count() - 1, pin_memory=gpu
+        train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=gpu
     )
     val_dataloader = DataLoader(
-        val_data, batch_size=batch_size, shuffle=True, num_workers=os.cpu_count() - 1, pin_memory=gpu
+        val_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=gpu
     )
 
-    for epoch in range(10):
+    for epoch in range(n_epochs):
         for step, batch in enumerate(tqdm(train_dataloader)):
             # Get next input sample.
-            if step > n_train / batch_size:
+            if step >= n_train / batch_size:
                 break
             x, y = batch  # x: (batch, channels, height, width), y: (batch,)
             if gpu:
                 x  = {k: v.cuda() for k, v in x.items()}
             # Run the network on the input.
             network.run(x, time_per_patch=time_per_patch)
-
-        visualize_spikes(network, batch_size=batch_size)
+            visualize_image(x["image"])
+            visualize_spikes(network, x)
+            visualize_patches(x, patch_shape)
+            plt.show()
         network.reset_state_variables()

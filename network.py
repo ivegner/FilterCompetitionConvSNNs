@@ -106,13 +106,6 @@ class Prototype1(Network):
         )
         l2_out = self.L2.run(l1_out)
 
-        # # for patch_idx in range(encoded_x["encoded_patches"].size(1)):
-        #     _raw_patch = encoded_x["patches"][:, patch_idx]
-        #     _raw_position = encoded_x["positions"][:, patch_idx]
-        #     patch = encoded_x["encoded_patches"][:, patch_idx].transpose(0, 1)  # batch on dim 1
-        #     position = encoded_x["encoded_positions"][:, patch_idx].transpose(0, 1)
-        #     super().run({"input": patch, "position": position}, time=time_per_patch)
-        #     self._patch_reset() # reset voltages in all layers except L2
         self._sample_reset()  # reset all voltages
 
     # def _patch_reset(self):
@@ -134,6 +127,15 @@ class Prototype1(Network):
 
         # reset monitor for next batch
         self._batch_l1_monitor.reset_state_variables()
+
+    def to(self, *args, **kwargs):
+        super().to(*args, **kwargs)
+        self.L2.to(*args, **kwargs)
+        # mmm, fixing library bugs
+        for k, rec in self.network.monitor.recording.items():
+            for v in rec:
+                self.network.monitor.recording[k][v] = self.network.monitor.recording[k][v].to(*args, **kwargs)
+
 
 
 class L2(Network):
@@ -172,7 +174,7 @@ class L2(Network):
         self.add_connection(l1_l2_connection, source="l1", target="l2")
         self.add_connection(inh_l2_connection, source="l2", target="l2")
 
-        self.monitor = NetworkMonitor(self)
+        self.monitor = Monitor(feature_l2, ["s"])
         self.add_monitor(self.monitor, name="monitor")
 
         self.dt = dt

@@ -7,9 +7,7 @@ from bindsnet.encoding import PoissonEncoder
 from torch.utils.data import DataLoader, random_split
 from torchvision.datasets import EMNIST
 from torchvision.transforms.transforms import Lambda, ToTensor, Compose
-
 TRAIN_FRAC, TEST_FRAC = 0.8, 0.2
-
 
 def make_emnist(split="balanced", **patch_kwargs):
     patch_encoder = PatchEncoder(**patch_kwargs)
@@ -68,11 +66,15 @@ class PatchEncoder:
         patch_h, patch_w = self.patch_shape
         input_size = channels * patch_h * patch_w
 
+        # the images are in matplotlib format (channels, rows, columns)
+        # but patches are apparently made as (x,y), which would be (columns, rows)
+        # thus, transpose the patches to correspond to (rows, columns)
+        x_t = x.transpose(1,2)
         # dilation not implemented
-        patches = F.unfold(x.unsqueeze(0), kernel_size=self.patch_shape, padding=PADDING, stride=STRIDE)
+        patches = F.unfold(x_t.unsqueeze(0), kernel_size=self.patch_shape, padding=PADDING, stride=STRIDE)
         patches = patches.squeeze(0)
         n_patches = patches.shape[-1]
-        patches = patches.permute(1, 0).view(-1, input_size)  # (n_patches, input_size)
+        patches = patches.transpose(0,1) # (n_patches, input_size)
 
         patch_positions = get_im2col_indices(x.shape, patch_h, patch_w, padding=PADDING, stride=STRIDE)
         # normalize positions to [0,1]
@@ -97,6 +99,7 @@ class PatchEncoder:
             encoded_patches=encoded_patches,
             positions=patch_positions,
             encoded_positions=encoded_positions,
+            image=x
         )
 
 
