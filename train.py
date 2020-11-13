@@ -51,7 +51,7 @@ if __name__ == "__main__":
     )
     if gpu:
         network = network.to(device)
-        
+
         # mmm, fixing library bugs
         for k, rec in network.monitor.recording.items():
             for v in rec:
@@ -77,5 +77,5 @@ if __name__ == "__main__":
             # Run the network on the input.
             network.run(x, time_per_patch=time_per_patch)
 
-        visualize_spikes(network)
+        visualize_spikes(network, batch_size=batch_size)
         network.reset_state_variables()
