@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from bindsnet.network import Network
-from bindsnet.network.nodes import Input, LIFNodes
+from bindsnet.network.nodes import Input, LIFNodes, AdaptiveLIFNodes
 from bindsnet.network.topology import Connection
 from bindsnet.network.monitors import NetworkMonitor, Monitor
 from bindsnet.learning import PostPre
@@ -39,18 +39,21 @@ class Prototype1(Network):
         """
         super().__init__(dt=dt)
         INH_WEIGHT = 1
+        THRESH=-63
+        NORM=5
+        ADAPTIVE = False
+        NodeClass = AdaptiveLIFNodes if ADAPTIVE else LIFNodes
         input_size = np.prod([n_input_channels, *patch_shape])
         input_layer = Input(input_size, traces=True)
         position_layer = Input(4 if use_4_position else 2, traces=True)
-        filter_layer = LIFNodes(n_filters, traces=True)
-        feature_l1 = LIFNodes(n_l1_features, traces=True)
-        feature_l2 = LIFNodes(n_l2_features, traces=True)
+        filter_layer = NodeClass(n_filters, traces=True, thresh=THRESH)
+        feature_l1 = NodeClass(n_l1_features, traces=True, thresh=THRESH)
+        feature_l2 = NodeClass(n_l2_features, traces=True, thresh=THRESH)
 
-        # TODO: normalize connections
-        input_filter_connection = Connection(input_layer, filter_layer, update_rule=PostPre)
-        filter_l1_connection = Connection(filter_layer, feature_l1, update_rule=PostPre)
-        position_l1_connection = Connection(position_layer, feature_l1, update_rule=PostPre)
-        l1_l2_connection = Connection(feature_l1, feature_l2, update_rule=PostPre)
+        input_filter_connection = Connection(input_layer, filter_layer, update_rule=PostPre, norm=NORM)
+        filter_l1_connection = Connection(filter_layer, feature_l1, update_rule=PostPre, norm=NORM)
+        position_l1_connection = Connection(position_layer, feature_l1, update_rule=PostPre, norm=NORM/2)
+        l1_l2_connection = Connection(feature_l1, feature_l2, update_rule=PostPre, norm=NORM)
 
         # Inhibitory connections
         inh_filter_connection = Connection(

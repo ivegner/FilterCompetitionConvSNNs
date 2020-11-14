@@ -1,3 +1,7 @@
+from datetime import datetime
+
+
+from datetime import datetime
 import os
 from matplotlib import pyplot as plt
 
@@ -17,9 +21,9 @@ if __name__ == "__main__":
     n_filters = 32
     n_l1_features = 64
     n_l2_features = 64
-    n_train = 1
+    n_train = 2
     batch_size = 1  # TODO: look into batching
-    n_epochs = 1
+    n_epochs = 2
 
     gpu = True
     seed = 1
@@ -42,7 +46,7 @@ if __name__ == "__main__":
         time_per_patch=time_per_patch,
         use_4_position=use_4_position,
         patch_intensity=128,
-        position_intensity=128,
+        position_intensity=256,
     )
     # each batch is (batch_size, n_patches, time_per_patch, n_channels*patch_shape)
 
@@ -74,8 +78,13 @@ if __name__ == "__main__":
                 x  = {k: v.cuda() for k, v in x.items()}
             # Run the network on the input.
             network.run(x, time_per_patch=time_per_patch)
-            # visualize_image(x["image"])
+            visualize_image(x["image"])
             visualize_spikes(network, x)
             # visualize_patches(x, patch_shape)
-            plt.show()
-        network.reset_state_variables()
+            network.reset_state_variables()  # reset monitor
+
+        plt.show()
+
+    save_dir = os.path.join(os.path.dirname(__file__), "saves")
+    os.makedirs(save_dir, exist_ok=True)
+    network.save(os.path.join(save_dir, datetime.now().strftime("%d_%m_%y-%H_%M_%S.model")))
