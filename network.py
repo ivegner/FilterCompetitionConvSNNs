@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from bindsnet.network import Network
-from bindsnet.network.nodes import Input, LIFNodes, AdaptiveLIFNodes
+from bindsnet.network.nodes import Input, LIFNodes, AdaptiveLIFNodes, Nodes
 from bindsnet.network.topology import Connection
 from bindsnet.network.monitors import NetworkMonitor, Monitor
 from bindsnet.learning import PostPre
@@ -39,20 +39,23 @@ class Prototype1(Network):
         """
         super().__init__(dt=dt)
         INH_WEIGHT = 1
-        THRESH=-63
-        NORM=5
+        THRESH = -63
+        NORM = 5
         ADAPTIVE = False
-        NodeClass = AdaptiveLIFNodes if ADAPTIVE else LIFNodes
         input_size = np.prod([n_input_channels, *patch_shape])
         input_layer = Input(input_size, traces=True)
         position_layer = Input(4 if use_4_position else 2, traces=True)
-        filter_layer = NodeClass(n_filters, traces=True, thresh=THRESH)
-        feature_l1 = NodeClass(n_l1_features, traces=True, thresh=THRESH)
-        feature_l2 = NodeClass(n_l2_features, traces=True, thresh=THRESH)
+        filter_layer = ClampingNodes(n_filters, traces=True, adaptive=ADAPTIVE, thresh=THRESH)
+        feature_l1 = ClampingNodes(n_l1_features, traces=True, adaptive=ADAPTIVE, thresh=THRESH)
+        feature_l2 = ClampingNodes(n_l2_features, traces=True, adaptive=ADAPTIVE, thresh=THRESH)
 
-        input_filter_connection = Connection(input_layer, filter_layer, update_rule=PostPre, norm=NORM)
+        input_filter_connection = Connection(
+            input_layer, filter_layer, update_rule=PostPre, norm=NORM
+        )
         filter_l1_connection = Connection(filter_layer, feature_l1, update_rule=PostPre, norm=NORM)
-        position_l1_connection = Connection(position_layer, feature_l1, update_rule=PostPre, norm=NORM/2)
+        position_l1_connection = Connection(
+            position_layer, feature_l1, update_rule=PostPre, norm=NORM / 2
+        )
         l1_l2_connection = Connection(feature_l1, feature_l2, update_rule=PostPre, norm=NORM)
 
         # Inhibitory connections
@@ -130,3 +133,69 @@ class Prototype1(Network):
                 self.network.monitor.recording[k][v] = self.network.monitor.recording[k][v].to(
                     *args, **kwargs
                 )
+
+
+class ClampingNodes(AdaptiveLIFNodes):
+    """
+    Node layer that clamps spikes per timestep to only those within `clamp_epsilon` mV of the
+    maximum-voltage neuron. Can be adaptive or not.
+    """
+
+    def __init__(self, *args, adaptive=False, clamp_epsilon=0.0, **kwargs):
+        """
+
+        Node layer that clamps spikes per timestep to only those within `clamp_epsilon*100`% of the
+            maximum-voltage neuron. Can be adaptive or not.
+
+        **Keyword arguments:**
+        :param bool `adaptive`: Whether to make the neurons adaptive (see AdaptiveLIFNodes), defaults to False
+        :param float `clamp_epsilon`: neurons within `clamp_epsilon*100`% of the maximum-voltage neuron will spike
+            (if they are above the threshold themselves).
+            Defaults to 0.0 (only the highest voltage spikes). A value of 1.0 produces behavior identical to
+            the original (Adaptive)LIFNodes.
+        """
+        super().__init__(*args, **kwargs)
+        self.adaptive = adaptive
+        self.clamp_eps = clamp_epsilon
+
+    def forward(self, x: torch.Tensor) -> None:
+        # language=rst
+        """
+        Runs a single simulation step.
+
+        :param x: Inputs to the layer.
+        """
+        # Decay voltages and adaptive thresholds.
+        self.v = self.decay * (self.v - self.rest) + self.rest
+        if self.adaptive and self.learning:
+            self.theta *= self.theta_decay
+
+        # Integrate inputs.
+        self.v += (self.refrac_count == 0).float() * x
+
+        # Decrement refractory counters.
+        self.refrac_count = (self.refrac_count > 0).float() * (self.refrac_count - self.dt)
+
+        potential_s = self.v - (self.thresh + self.theta)
+        # self.s = self.s.masked_fill(potential_s < 0, 0).bool()
+        max_v_surplus = torch.max(potential_s)
+        if max_v_surplus >= 0:
+            self.s = potential_s >= (1-self.clamp_eps)*max_v_surplus
+        else:
+            self.s.zero_().bool()
+        # max_idx = torch.argmax(potential_s)
+        # self.s.zero_()
+        # self.s = self.s.bool()
+        # self.s[0, max_idx] = (potential_s[0, max_idx] >= 1.)
+
+        # Refractoriness, voltage reset, and adaptive thresholds.
+        self.refrac_count.masked_fill_(self.s, self.refrac)
+        self.v.masked_fill_(self.s, self.reset)
+        if self.adaptive and self.learning:
+            self.theta += self.theta_plus * self.s.float().sum(0)
+
+        # voltage clipping to lowerbound
+        if self.lbound is not None:
+            self.v.masked_fill_(self.v < self.lbound, self.lbound)
+
+        Nodes.forward(self, x)
