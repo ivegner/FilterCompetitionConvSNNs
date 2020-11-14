@@ -69,7 +69,7 @@ class Prototype1(Network):
         self.add_connection(inh_l1_connection, source="l1", target="l1")
 
         # monitor whole network
-        self.monitor = NetworkMonitor(self)
+        self.monitor = NetworkMonitor(self, connections=[], state_vars=["s"])
         self.add_monitor(self.monitor, name="monitor")
 
         # monitor just L1 and reset every batch
@@ -85,38 +85,53 @@ class Prototype1(Network):
         # x: {"encoded_patches", "encoded_positions", "patches", "positions"}
         # x["encoded_patches"]: (batch_size, n_patches, time_per_patch, input_size)
         # x["encoded_positions"]: (batch_size, n_patches, time_per_patch, 2|4)
-
         batch_size, n_patches = encoded_x["encoded_patches"].shape[:2]
-        # Flatten. Effectively treat each patch as a batch
-        patches = encoded_x["encoded_patches"].view(batch_size * n_patches, time_per_patch, -1)
-        positions = encoded_x["encoded_positions"].view(batch_size * n_patches, time_per_patch, -1)
 
-        super().run(
-            {"input": patches.permute(1, 0, 2), "position": positions.permute(1, 0, 2)},
-            time=time_per_patch,
-        )
-        l1_out = self._batch_l1_monitor.get("s")
-        l1_dim = l1_out.shape[-1]
-        # l1_out.shape: [time_per_patch, batch_size*n_patches, l1_dim]
-        l1_out = (
-            l1_out.view(time_per_patch, batch_size, n_patches, l1_dim) # reshape into original
-            .transpose(0, 1) # swap batch and time
-            .view(batch_size, n_patches * time_per_patch, l1_dim) # unite time and patches
-            .transpose(0, 1) # time first, batches second
-        )
+        ROLL_PATCHES = False
+        if ROLL_PATCHES:
+            # Flatten. Effectively treat each patch as a batch
+            # for some reason doesn't work.
+            patches = encoded_x["encoded_patches"].view(batch_size * n_patches, time_per_patch, -1)
+            positions = encoded_x["encoded_positions"].view(batch_size * n_patches, time_per_patch, -1)
+
+            super().run(
+                {"input": patches.permute(1, 0, 2), "position": positions.permute(1, 0, 2)},
+                time=time_per_patch,
+            )
+            l1_out = self._batch_l1_monitor.get("s")
+            l1_dim = l1_out.shape[-1]
+            # l1_out.shape: [time_per_patch, batch_size, n_patches, l1_dim]
+            l1_out = (
+                l1_out.view(time_per_patch, batch_size, n_patches, l1_dim) # reshape into original
+                .transpose(0, 1) # swap batch and time
+                .view(batch_size, n_patches * time_per_patch, l1_dim) # unite time and patches
+                .transpose(0, 1) # time first, batches second
+            )
+        else:
+            for patch_idx in range(n_patches):
+                print(patch_idx, f"{patch_idx/n_patches:.2f}", end='\r')
+                _raw_patch = encoded_x["patches"][:, patch_idx]
+                _raw_position = encoded_x["positions"][:, patch_idx]
+                patch = encoded_x["encoded_patches"][:, patch_idx].transpose(0, 1)  # batch on dim 1
+                position = encoded_x["encoded_positions"][:, patch_idx].transpose(0, 1)
+                super().run({"input": patch, "position": position}, time=time_per_patch)
+                self._patch_reset() # reset all voltages
+
+            l1_out = self._batch_l1_monitor.get("s")
+            # l1_out.shape: [time_per_patch*n_patches, batch_size, l1_dim]
+
+
         l2_out = self.L2.run(l1_out)
 
         self._sample_reset()  # reset all voltages
 
-    # def _patch_reset(self):
-    #     """Reset all variables except L2"""
-    #     for layer in self.layers:
-    #         if layer != "l2":
-    #             self.layers[layer].reset_state_variables()
+    def _patch_reset(self):
+        """Reset all variables except L2"""
+        for layer in self.layers:
+            self.layers[layer].reset_state_variables()
 
-    #     for connection in self.connections:
-    #         if "l2" not in connection:
-    #             self.connections[connection].reset_state_variables()
+        for connection in self.connections:
+            self.connections[connection].reset_state_variables()
 
     def _sample_reset(self):
         for layer in self.layers:
