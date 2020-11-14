@@ -41,8 +41,8 @@ if __name__ == "__main__":
         patch_shape=patch_shape,
         time_per_patch=time_per_patch,
         use_4_position=use_4_position,
-        patch_intensity=512,
-        position_intensity=512,
+        patch_intensity=128,
+        position_intensity=128,
     )
     # each batch is (batch_size, n_patches, time_per_patch, n_channels*patch_shape)
 
@@ -74,8 +74,8 @@ if __name__ == "__main__":
                 x  = {k: v.cuda() for k, v in x.items()}
             # Run the network on the input.
             network.run(x, time_per_patch=time_per_patch)
-            visualize_image(x["image"])
+            # visualize_image(x["image"])
             visualize_spikes(network, x)
-            visualize_patches(x, patch_shape)
+            # visualize_patches(x, patch_shape)
             plt.show()
         network.reset_state_variables()

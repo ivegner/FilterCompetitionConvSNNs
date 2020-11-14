@@ -16,7 +16,6 @@ def visualize_spikes(network, x):
 
     rec = network.monitor.get()
     spikes = {k: rec[k]["s"] for k in network.layers}
-    spikes["l2"] = network.L2.monitor.get("s")
 
     for layer, s in spikes.items():
         n_timesteps, n_dim = s.size(0), s.size(-1)
