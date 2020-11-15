@@ -2,3 +2,4 @@ bindsnet
 torch
 torchvision
 tqdm
+click

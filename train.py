@@ -1,30 +1,75 @@
-from datetime import datetime
-
-
-from datetime import datetime
 import os
-from matplotlib import pyplot as plt
+import click
+from datetime import datetime
 
 import torch
+from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from datasets import make_emnist
 from network import Prototype1
-from visualization import visualize_spikes, visualize_image, visualize_patches
+from visualization import visualize_image, visualize_patches, visualize_spikes
 
-if __name__ == "__main__":
+
+@click.command()
+@click.option("-b", "--batch_size", default=1, show_default=True)
+@click.option("-e", "--n_epochs", default=1, show_default=True)
+@click.option(
+    "--n_train",
+    default=None,
+    show_default=True,
+    type=int,
+    help="Number of train examples to use per epoch.",
+)
+@click.option(
+    "--n_val",
+    default=5,
+    show_default=True,
+    type=int,
+    help="Number of examples to visualize after training.",
+)
+@click.option("--time_per_patch", default=10, show_default=True, help="Timesteps per patch")
+@click.option("--n_filters", default=32, show_default=True)
+@click.option("--n_l1_features", default=64, show_default=True)
+@click.option("--n_l2_features", default=64, show_default=True)
+@click.option(
+    "--vis_val_images",
+    default=True,
+    show_default=True,
+    is_flag=True,
+    help="Show images for each image during validation visualization",
+)
+@click.option(
+    "--vis_val_spikes",
+    default=True,
+    show_default=True,
+    is_flag=True,
+    help="Show spikes for each image during validation visualization",
+)
+@click.option(
+    "--vis_val_patches",
+    default=False,
+    show_default=True,
+    is_flag=True,
+    help="Show image patches for each image during validation visualization",
+)
+def main(
+    batch_size,  # B=1: 600hr for dataset. B=32: 170hr for dataset
+    n_epochs,
+    n_train,
+    n_val,
+    time_per_patch,
+    n_filters,
+    n_l1_features,
+    n_l2_features,
+    vis_val_images,
+    vis_val_spikes,
+    vis_val_patches,
+):
     time_per_patch = 10
     use_4_position = True
-    n_epochs = 10
     patch_shape = (5, 5)
-    n_filters = 32
-    n_l1_features = 64
-    n_l2_features = 64
-    n_train = 1
-    n_val = 3
-    batch_size = 1  # B=1: 600hr for dataset. B=32: 170hr for dataset
-    n_epochs = 1
 
     gpu = True
     seed = 1
@@ -68,7 +113,7 @@ if __name__ == "__main__":
     for epoch in range(n_epochs):
         for step, batch in enumerate(tqdm(train_dataloader)):
             # Get next input sample.
-            if step >= n_train / batch_size:
+            if n_train is not None and step >= n_train / batch_size:
                 break
             x, y = batch  # x: (batch, channels, height, width), y: (batch,)
             if gpu:
@@ -97,7 +142,14 @@ if __name__ == "__main__":
             x = {k: v.cuda() for k, v in x.items()}
         # Run the network on the input.
         layer_monitors = network.run(x, time_per_patch=time_per_patch, monitor_spikes=True)
-        visualize_image(x["image"])
-        visualize_spikes(layer_monitors, x)
-        # visualize_patches(x, patch_shape)
+        if vis_val_images:
+            visualize_image(x["image"])
+        if vis_val_spikes:
+            visualize_spikes(layer_monitors, x)
+        if vis_val_patches:
+            visualize_patches(x, patch_shape)
         plt.show()
+
+
+if __name__ == "__main__":
+    main()
