@@ -194,10 +194,8 @@ class ClampingNodes(AdaptiveLIFNodes):
         potential_s = self.v - (self.thresh + self.theta)
         # self.s = self.s.masked_fill(potential_s < 0, 0).bool()
         max_v_surplus = torch.max(potential_s)
-        if max_v_surplus >= 0:
-            self.s = potential_s >= (1 - self.clamp_eps) * max_v_surplus
-        else:
-            self.s.fill_(False)
+        if max_v_surplus < 0.0: max_v_surplus = 0.0
+        self.s = potential_s >= (1 - self.clamp_eps) * max_v_surplus
         # max_idx = torch.argmax(potential_s)
         # self.s.zero_()
         # self.s = self.s.bool()
