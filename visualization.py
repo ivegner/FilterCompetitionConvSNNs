@@ -6,18 +6,17 @@ import numpy as np
 plt.ioff()
 
 
-def visualize_spikes(network, x):
+def visualize_spikes(monitors, x):
     positions = x["positions"].cpu()  # (batch_size, n_patches, 2|4)
     batch_size, n_patches = positions.size(0), positions.size(1)
     if batch_size != 1:
         print(f"Batch size >1 detected ({batch_size}), only visualizing first batch")
     positions = positions[0]
 
+    spikes = {}
 
-    rec = network.monitor.get()
-    spikes = {k: rec[k]["s"] for k in network.layers}
-
-    for layer, s in spikes.items():
+    for layer, mon in monitors.items():
+        s = mon.get("s")
         n_timesteps, n_dim = s.size(0), s.size(-1)
         # s.shape: [time_per_patch*n_samples, batch_size*n_patches, n_dim]
 

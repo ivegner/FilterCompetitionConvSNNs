@@ -74,11 +74,10 @@ if __name__ == "__main__":
             if gpu:
                 x = {k: v.cuda() for k, v in x.items()}
             # Run the network on the input.
-            network.run(x, time_per_patch=time_per_patch)
+            network.run(x, time_per_patch=time_per_patch, monitor_spikes=False)
             # visualize_image(x["image"])
-            # visualize_spikes(network, x)
-            # plt.show()
-            network.reset_state_variables()  # reset monitor
+            # visualize_spikes(monitors, x)
+            plt.show()
 
     save_dir = os.path.join(os.path.dirname(__file__), "saves")
     os.makedirs(save_dir, exist_ok=True)
@@ -97,9 +96,8 @@ if __name__ == "__main__":
         if gpu:
             x = {k: v.cuda() for k, v in x.items()}
         # Run the network on the input.
-        network.run(x, time_per_patch=time_per_patch)
+        layer_monitors = network.run(x, time_per_patch=time_per_patch, monitor_spikes=True)
         visualize_image(x["image"])
-        visualize_spikes(network, x)
+        visualize_spikes(layer_monitors, x)
         # visualize_patches(x, patch_shape)
-        network.reset_state_variables()  # reset monitor
         plt.show()

@@ -99,20 +99,26 @@ class Prototype1(Network):
         self.add_connection(inh_l1_connection, source="l1", target="l1")
         self.add_connection(inh_l2_connection, source="l2", target="l2")
 
-        # monitor whole network
-        self.monitor = NetworkMonitor(self, connections=[], state_vars=["s"])
-        self.add_monitor(self.monitor, name="monitor")
-
         self.use_4_position = use_4_position
         self.n_input_channels = n_input_channels
         self.patch_shape = patch_shape
         self.dt = dt
 
-    def run(self, encoded_x, time_per_patch):
+    def run(self, encoded_x, time_per_patch, monitor_spikes=False):
         # x: {"encoded_patches", "encoded_positions", "patches", "positions"}
         # x["encoded_patches"]: (batch_size, n_patches, time_per_patch, input_size)
         # x["encoded_positions"]: (batch_size, n_patches, time_per_patch, 2|4)
         batch_size, n_patches = encoded_x["encoded_patches"].shape[:2]
+
+        monitors = None
+        if monitor_spikes:
+            # Create monitors for each batch separately, if requested
+            # skipped at train due to overhead
+            monitors = {}
+            for layer in self.layers:
+                monitor = Monitor(self.layers[layer], state_vars=["s"])
+                self.add_monitor(monitor, name=layer)
+                monitors[layer] = monitor
 
         for patch_idx in range(n_patches):
             print(patch_idx, f"{patch_idx/n_patches:.2f}", end="\r")
@@ -122,7 +128,9 @@ class Prototype1(Network):
             position = encoded_x["encoded_positions"][:, patch_idx].transpose(0, 1)
             super().run({"input": patch, "position": position}, time=time_per_patch)
             self._patch_reset()  # reset all voltages
-        self._sample_reset()  # reset all voltages
+        self._batch_reset()  # reset all voltages including L2, and clear monitors
+
+        return monitors
 
     def _patch_reset(self):
         """Reset all variables except L2"""
@@ -134,28 +142,30 @@ class Prototype1(Network):
             if "l2" not in connection:
                 self.connections[connection].reset_state_variables()
 
-    def _sample_reset(self):
+    def _batch_reset(self):
         for layer in self.layers:
             self.layers[layer].reset_state_variables()
 
         for connection in self.connections:
             self.connections[connection].reset_state_variables()
 
-    def to(self, *args, **kwargs):
-        # mmm, fixing library bugs
-        for k, rec in self.monitor.recording.items():
-            for v in rec:
-                self.monitor.recording[k][v] = self.monitor.recording[k][v].to(
-                    *args, **kwargs
-                )
-        return super().to(*args, **kwargs)
+        self.monitors = [] # clear list of monitors each batch
 
-    def reset_state_variables(self):
-        """Reset all state variables. Replaces buggy library version"""
-        self._sample_reset()
-        for k, rec in self.monitor.recording.items():
-            for v in rec:
-                self.monitor.recording[k][v] = torch.Tensor().to(self.monitor.recording[k][v].device)
+    # def to(self, *args, **kwargs):
+    #     # mmm, fixing library bugs
+    #     for k, rec in self.monitor.recording.items():
+    #         for v in rec:
+    #             self.monitor.recording[k][v] = self.monitor.recording[k][v].to(
+    #                 *args, **kwargs
+    #             )
+    #     return super().to(*args, **kwargs)
+
+    # def reset_state_variables(self):
+    #     """Reset all state variables. Replaces buggy library version"""
+    #     self._sample_reset()
+    #     for k, rec in self.monitor.recording.items():
+    #         for v in rec:
+    #             self.monitor.recording[k][v] = torch.Tensor().to(self.monitor.recording[k][v].device)
 
 class ClampingNodes(AdaptiveLIFNodes):
     """
