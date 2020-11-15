@@ -21,10 +21,10 @@ if __name__ == "__main__":
     n_filters = 32
     n_l1_features = 64
     n_l2_features = 64
-    n_train = 5
+    n_train = 1
     n_val = 3
-    batch_size = 1  # B=1: 841hr for dataset (w/vis). B=32: 241hr for dataset (no vis)
-    n_epochs = 5
+    batch_size = 1  # B=1: 600hr for dataset. B=32: 170hr for dataset
+    n_epochs = 1
 
     gpu = True
     seed = 1
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         time_per_patch=time_per_patch,
         use_4_position=use_4_position,
         patch_intensity=128,
-        position_intensity=256,
+        position_intensity=128,
     )
     # each batch is (batch_size, n_patches, time_per_patch, n_channels*patch_shape)
 

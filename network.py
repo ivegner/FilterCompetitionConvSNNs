@@ -1,3 +1,4 @@
+from operator import pos
 import numpy as np
 import torch
 from bindsnet.network import Network
@@ -40,23 +41,38 @@ class Prototype1(Network):
         super().__init__(dt=dt)
         INH_WEIGHT = 1
         THRESH = -63
-        NORM = 5
+        NORM_FILTER = 5
+        NORM_L1 = 15
+        NORM_L2 = 100
         ADAPTIVE = False
         input_size = np.prod([n_input_channels, *patch_shape])
+        position_size = 4 if use_4_position else 2
+
         input_layer = Input(input_size, traces=True)
-        position_layer = Input(4 if use_4_position else 2, traces=True)
+        position_layer = Input(position_size, traces=True)
         filter_layer = ClampingNodes(n_filters, traces=True, adaptive=ADAPTIVE, thresh=THRESH)
         feature_l1 = ClampingNodes(n_l1_features, traces=True, adaptive=ADAPTIVE, thresh=THRESH)
-        feature_l2 = ClampingNodes(n_l2_features, traces=True, adaptive=ADAPTIVE, thresh=THRESH)
+        feature_l2 = ClampingNodes(
+            n_l2_features, traces=True, adaptive=ADAPTIVE, thresh=THRESH, tc_decay=1e10
+        )
 
         input_filter_connection = Connection(
-            input_layer, filter_layer, update_rule=PostPre, norm=NORM
+            input_layer, filter_layer, update_rule=PostPre, norm=NORM_FILTER
         )
-        filter_l1_connection = Connection(filter_layer, feature_l1, update_rule=PostPre, norm=NORM)
+        filter_l1_connection = Connection(
+            filter_layer,
+            feature_l1,
+            update_rule=PostPre,
+            norm=NORM_L1 * (n_filters / (n_filters + position_size)),  # norm by amount of inputs
+        )
         position_l1_connection = Connection(
-            position_layer, feature_l1, update_rule=PostPre, norm=NORM / 2
+            position_layer,
+            feature_l1,
+            update_rule=PostPre,
+            norm=NORM_L1
+            * (position_size / (n_filters + position_size)),  # norm by amount of inputs
         )
-        l1_l2_connection = Connection(feature_l1, feature_l2, update_rule=PostPre, norm=NORM)
+        l1_l2_connection = Connection(feature_l1, feature_l2, update_rule=PostPre, norm=NORM_L2)
 
         # Inhibitory connections
         inh_filter_connection = Connection(
@@ -180,7 +196,7 @@ class ClampingNodes(AdaptiveLIFNodes):
         # self.s = self.s.masked_fill(potential_s < 0, 0).bool()
         max_v_surplus = torch.max(potential_s)
         if max_v_surplus >= 0:
-            self.s = potential_s >= (1-self.clamp_eps)*max_v_surplus
+            self.s = potential_s >= (1 - self.clamp_eps) * max_v_surplus
         else:
             self.s.zero_().bool()
         # max_idx = torch.argmax(potential_s)
