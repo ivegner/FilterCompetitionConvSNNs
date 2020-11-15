@@ -17,13 +17,14 @@ if __name__ == "__main__":
     time_per_patch = 10
     use_4_position = True
     n_epochs = 10
-    patch_shape = (5,5)
+    patch_shape = (5, 5)
     n_filters = 32
     n_l1_features = 64
     n_l2_features = 64
-    n_train = 2
-    batch_size = 1  # TODO: look into batching
-    n_epochs = 2
+    n_train = 5
+    n_val = 3
+    batch_size = 1  # B=1: 841hr for dataset (w/vis). B=32: 241hr for dataset (no vis)
+    n_epochs = 5
 
     gpu = True
     seed = 1
@@ -64,10 +65,6 @@ if __name__ == "__main__":
     train_dataloader = DataLoader(
         train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=gpu
     )
-    val_dataloader = DataLoader(
-        val_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=gpu
-    )
-
     for epoch in range(n_epochs):
         for step, batch in enumerate(tqdm(train_dataloader)):
             # Get next input sample.
@@ -75,16 +72,34 @@ if __name__ == "__main__":
                 break
             x, y = batch  # x: (batch, channels, height, width), y: (batch,)
             if gpu:
-                x  = {k: v.cuda() for k, v in x.items()}
+                x = {k: v.cuda() for k, v in x.items()}
             # Run the network on the input.
             network.run(x, time_per_patch=time_per_patch)
-            visualize_image(x["image"])
-            visualize_spikes(network, x)
-            # visualize_patches(x, patch_shape)
+            # visualize_image(x["image"])
+            # visualize_spikes(network, x)
+            # plt.show()
             network.reset_state_variables()  # reset monitor
-
-        plt.show()
 
     save_dir = os.path.join(os.path.dirname(__file__), "saves")
     os.makedirs(save_dir, exist_ok=True)
     network.save(os.path.join(save_dir, datetime.now().strftime("%d_%m_%y-%H_%M_%S.model")))
+
+    print("Validation")
+    val_dataloader = DataLoader(
+        val_data, batch_size=1, shuffle=True, num_workers=num_workers, pin_memory=gpu
+    )
+
+    for step, batch in enumerate(tqdm(val_dataloader)):
+        # Get next input sample.
+        if step >= n_val:
+            break
+        x, y = batch  # x: (batch, channels, height, width), y: (batch,)
+        if gpu:
+            x = {k: v.cuda() for k, v in x.items()}
+        # Run the network on the input.
+        network.run(x, time_per_patch=time_per_patch)
+        visualize_image(x["image"])
+        visualize_spikes(network, x)
+        # visualize_patches(x, patch_shape)
+        network.reset_state_variables()  # reset monitor
+        plt.show()
