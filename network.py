@@ -142,14 +142,13 @@ class Prototype1(Network):
             self.connections[connection].reset_state_variables()
 
     def to(self, *args, **kwargs):
-        super().to(*args, **kwargs)
         # mmm, fixing library bugs
         for k, rec in self.monitor.recording.items():
             for v in rec:
                 self.monitor.recording[k][v] = self.monitor.recording[k][v].to(
                     *args, **kwargs
                 )
-
+        return super().to(*args, **kwargs)
 
 class ClampingNodes(AdaptiveLIFNodes):
     """
