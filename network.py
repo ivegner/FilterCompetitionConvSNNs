@@ -150,6 +150,13 @@ class Prototype1(Network):
                 )
         return super().to(*args, **kwargs)
 
+    def reset_state_variables(self):
+        """Reset all state variables. Replaces buggy library version"""
+        self._sample_reset()
+        for k, rec in self.monitor.recording.items():
+            for v in rec:
+                self.monitor.recording[k][v] = torch.Tensor(device=self.monitor.recording[k][v].device)
+
 class ClampingNodes(AdaptiveLIFNodes):
     """
     Node layer that clamps spikes per timestep to only those within `clamp_epsilon` mV of the
