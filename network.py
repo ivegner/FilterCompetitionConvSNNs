@@ -144,9 +144,9 @@ class Prototype1(Network):
     def to(self, *args, **kwargs):
         super().to(*args, **kwargs)
         # mmm, fixing library bugs
-        for k, rec in self.network.monitor.recording.items():
+        for k, rec in self.monitor.recording.items():
             for v in rec:
-                self.network.monitor.recording[k][v] = self.network.monitor.recording[k][v].to(
+                self.monitor.recording[k][v] = self.monitor.recording[k][v].to(
                     *args, **kwargs
                 )
 
