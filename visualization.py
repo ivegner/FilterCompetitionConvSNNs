@@ -7,7 +7,7 @@ plt.ioff()
 
 
 def visualize_spikes(network, x):
-    positions = x["positions"]  # (batch_size, n_patches, 2|4)
+    positions = x["positions"].cpu()  # (batch_size, n_patches, 2|4)
     batch_size, n_patches = positions.size(0), positions.size(1)
     if batch_size != 1:
         print(f"Batch size >1 detected ({batch_size}), only visualizing first batch")
@@ -23,7 +23,7 @@ def visualize_spikes(network, x):
 
         s = s.view(n_timesteps, batch_size, -1, n_dim).transpose(0, 1).view(batch_size, -1, n_dim)
         # s.shape: [batch_size, time, n_dim]
-        spikes[layer] = s[0]
+        spikes[layer] = s[0].cpu()
 
     ims, axes = plot_spikes(spikes, figsize=(16,9))
 
@@ -50,13 +50,13 @@ def visualize_image(image):
     assert len(image.shape) == 4
     if image.shape[0] != 1:
         print(f"Batch size >1 detected ({image.shape[0]}), only visualizing first image")
-    image = image[0].transpose(0, 2)
+    image = image[0].transpose(0, 2).cpu()
     fig, ax = plt.subplots()
     ax.imshow(image)
 
 def visualize_patches(x, patch_shape):
-    positions = x["positions"]  # (batch_size, n_patches, 2|4)
-    patches = x["patches"]  # (batch_size, n_patches, input_size)
+    positions = x["positions"].cpu()  # (batch_size, n_patches, 2|4)
+    patches = x["patches"].cpu()  # (batch_size, n_patches, input_size)
     batch_size, n_patches, input_size = patches.shape
 
     if batch_size != 1:

@@ -155,7 +155,7 @@ class Prototype1(Network):
         self._sample_reset()
         for k, rec in self.monitor.recording.items():
             for v in rec:
-                self.monitor.recording[k][v] = torch.Tensor(device=self.monitor.recording[k][v].device)
+                self.monitor.recording[k][v] = torch.Tensor().to(self.monitor.recording[k][v].device)
 
 class ClampingNodes(AdaptiveLIFNodes):
     """
