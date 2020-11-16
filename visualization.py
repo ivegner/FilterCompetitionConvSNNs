@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import os
 from bindsnet.analysis.plotting import plot_spikes
 import numpy as np
+from torchvision.utils import make_grid
 
 plt.ioff()
 
@@ -75,3 +76,16 @@ def visualize_patches(x, patch_shape):
         ax.set_axis_off()
 
     fig.tight_layout()
+
+def visualize_filter_weights(network):
+    filter_weights = network.connections[("input", "filter")].w # (c*h*w, n_filters)
+    patch_shape = network.patch_shape
+    n_filters = filter_weights.size(1)
+    filter_weights = filter_weights.view(-1, *patch_shape, n_filters)
+    filter_weights = filter_weights.permute(3,0,1,2) # (n, c, h, w)
+    grid = make_grid(filter_weights)
+
+    fig, ax = plt.subplots()
+    ax.set_axis_off()
+    ax.imshow(grid.permute(1,2,0).cpu())
+

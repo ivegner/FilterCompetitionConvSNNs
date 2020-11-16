@@ -149,7 +149,7 @@ class Prototype1(Network):
         for connection in self.connections:
             self.connections[connection].reset_state_variables()
 
-        self.monitors = [] # clear list of monitors each batch
+        self.monitors = {} # clear list of monitors each batch
 
     # def to(self, *args, **kwargs):
     #     # mmm, fixing library bugs

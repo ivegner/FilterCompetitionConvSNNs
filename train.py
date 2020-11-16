@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from datasets import make_emnist
 from network import Prototype1
-from visualization import visualize_image, visualize_patches, visualize_spikes
+from visualization import visualize_image, visualize_patches, visualize_spikes, visualize_filter_weights
 
 
 @click.command()
@@ -48,11 +48,25 @@ from visualization import visualize_image, visualize_patches, visualize_spikes
     help="Show spikes for each image during validation visualization",
 )
 @click.option(
+    "--vis_filters",
+    default=True,
+    show_default=True,
+    is_flag=True,
+    help="Visualize filter weights during validation visualization",
+)
+@click.option(
     "--vis_val_patches",
     default=False,
     show_default=True,
     is_flag=True,
     help="Show image patches for each image during validation visualization",
+)
+@click.option(
+    "--save/--no_save",
+    default=True,
+    show_default=True,
+    is_flag=True,
+    help="Save model after training",
 )
 def main(
     batch_size,  # B=1: 600hr for dataset. B=32: 170hr for dataset
@@ -65,7 +79,9 @@ def main(
     n_l2_features,
     vis_val_images,
     vis_val_spikes,
+    vis_filters,
     vis_val_patches,
+    save
 ):
     time_per_patch = 10
     use_4_position = True
@@ -106,6 +122,7 @@ def main(
     if gpu:
         network = network.to(device)
 
+
     # the dataloaders have to be out here for pickling for some reason
     train_dataloader = DataLoader(
         train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=gpu
@@ -124,15 +141,18 @@ def main(
             # visualize_spikes(monitors, x)
             plt.show()
 
-    save_dir = os.path.join(os.path.dirname(__file__), "saves")
-    os.makedirs(save_dir, exist_ok=True)
-    network.save(os.path.join(save_dir, datetime.now().strftime("%d_%m_%y-%H_%M_%S.model")))
+    if save:
+        save_dir = os.path.join(os.path.dirname(__file__), "saves")
+        os.makedirs(save_dir, exist_ok=True)
+        network.save(os.path.join(save_dir, datetime.now().strftime("%d_%m_%y-%H_%M_%S.model")))
 
     print("Validation")
     val_dataloader = DataLoader(
         val_data, batch_size=1, shuffle=True, num_workers=num_workers, pin_memory=gpu
     )
-
+    if vis_filters:
+        visualize_filter_weights(network)
+        plt.show()
     for step, batch in enumerate(tqdm(val_dataloader)):
         # Get next input sample.
         if step >= n_val:
