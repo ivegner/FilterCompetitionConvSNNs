@@ -10,7 +10,7 @@ from tqdm import tqdm
 from datasets import make_emnist
 from network import Prototype1
 from visualization import visualize_image, visualize_patches, visualize_spikes, visualize_filter_weights
-
+from bindsnet.network import load
 
 @click.command()
 @click.option("-b", "--batch_size", default=1, show_default=True)
@@ -30,6 +30,12 @@ from visualization import visualize_image, visualize_patches, visualize_spikes, 
     help="Number of examples to visualize after training.",
 )
 @click.option("--time_per_patch", default=10, show_default=True, help="Timesteps per patch")
+@click.option(
+    "-l", "--load-filename",
+    default=None,
+    type=str,
+    help="Filename to load a model from",
+)
 @click.option("--n_filters", default=32, show_default=True)
 @click.option("--n_l1_features", default=64, show_default=True)
 @click.option("--n_l2_features", default=64, show_default=True)
@@ -68,12 +74,19 @@ from visualization import visualize_image, visualize_patches, visualize_spikes, 
     is_flag=True,
     help="Save model after training",
 )
+@click.option(
+    "--train/--no_train", "do_train",
+    default=True,
+    show_default=True,
+    help="Run the train loop",
+)
 def main(
     batch_size,  # B=1: 600hr for dataset. B=32: 170hr for dataset
     n_epochs,
     n_train,
     n_val,
     time_per_patch,
+    load_filename,
     n_filters,
     n_l1_features,
     n_l2_features,
@@ -81,7 +94,8 @@ def main(
     vis_val_spikes,
     vis_filters,
     vis_val_patches,
-    save
+    save,
+    do_train
 ):
     time_per_patch = 10
     use_4_position = True
@@ -111,45 +125,51 @@ def main(
         position_intensity=128,
     )
     # each batch is (batch_size, n_patches, time_per_patch, n_channels*patch_shape)
-
-    network = Prototype1(
-        n_input_channels=1,
-        patch_shape=patch_shape,
-        n_filters=n_filters,
-        n_l1_features=n_l1_features,
-        n_l2_features=n_l2_features,
-    )
+    if load_filename:
+        network = load(load_filename, "cuda" if gpu else "cpu")
+    else:
+        network = Prototype1(
+            n_input_channels=1,
+            patch_shape=patch_shape,
+            n_filters=n_filters,
+            n_l1_features=n_l1_features,
+            n_l2_features=n_l2_features,
+        )
     if gpu:
         network = network.to(device)
 
-
+    ##### TRAIN #####
     # the dataloaders have to be out here for pickling for some reason
-    train_dataloader = DataLoader(
-        train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=gpu
-    )
-    for epoch in range(n_epochs):
-        for step, batch in enumerate(tqdm(train_dataloader)):
-            # Get next input sample.
-            if n_train is not None and step >= n_train / batch_size:
-                break
-            x, y = batch  # x: (batch, channels, height, width), y: (batch,)
-            if gpu:
-                x = {k: v.cuda() for k, v in x.items()}
-            # Run the network on the input.
-            network.run(x, time_per_patch=time_per_patch, monitor_spikes=False)
-            # visualize_image(x["image"])
-            # visualize_spikes(monitors, x)
-            plt.show()
+    if do_train:
+        train_dataloader = DataLoader(
+            train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=gpu
+        )
+        network.train(True)
+        for epoch in range(n_epochs):
+            for step, batch in enumerate(tqdm(train_dataloader)):
+                # Get next input sample.
+                if n_train is not None and step >= n_train / batch_size:
+                    break
+                x, y = batch  # x: (batch, channels, height, width), y: (batch,)
+                if gpu:
+                    x = {k: v.cuda() for k, v in x.items()}
+                # Run the network on the input.
+                network.run(x, time_per_patch=time_per_patch, monitor_spikes=False)
+                # visualize_image(x["image"])
+                # visualize_spikes(monitors, x)
+                # plt.show()
 
-    if save:
-        save_dir = os.path.join(os.path.dirname(__file__), "saves")
-        os.makedirs(save_dir, exist_ok=True)
-        network.save(os.path.join(save_dir, datetime.now().strftime("%d_%m_%y-%H_%M_%S.model")))
+        if save:
+            save_dir = os.path.join(os.path.dirname(__file__), "saves")
+            os.makedirs(save_dir, exist_ok=True)
+            network.save(os.path.join(save_dir, datetime.now().strftime("%d_%m_%y-%H_%M_%S.model")))
 
+    #### VALIDATION AND VISUALIZATION #####
     print("Validation")
     val_dataloader = DataLoader(
         val_data, batch_size=1, shuffle=True, num_workers=num_workers, pin_memory=gpu
     )
+    network.train(False)
     if vis_filters:
         visualize_filter_weights(network)
         plt.show()
