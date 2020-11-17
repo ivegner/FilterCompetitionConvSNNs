@@ -43,6 +43,9 @@ from bindsnet.network import load
     type=str,
     help="Filename to load a model from",
 )
+@click.option(
+    "-lr", "--learning_rate", default=1e-4, show_default=True, help="Learning rate (aka nu)"
+)
 @click.option("--n_filters", default=32, show_default=True)
 @click.option("--n_l1_features", default=64, show_default=True)
 @click.option("--n_l2_features", default=64, show_default=True)
@@ -125,6 +128,7 @@ def main(**kwargs):
             n_filters=kwargs["n_filters"],
             n_l1_features=kwargs["n_l1_features"],
             n_l2_features=kwargs["n_l2_features"],
+            nu=kwargs["learning_rate"],
         )
     network = network.to(device)
 
