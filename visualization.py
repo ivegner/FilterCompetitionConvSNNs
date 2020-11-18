@@ -3,6 +3,8 @@ import os
 from bindsnet.analysis.plotting import plot_spikes
 import numpy as np
 from torchvision.utils import make_grid
+from matplotlib.cm import get_cmap
+import torch
 
 plt.ioff()
 
@@ -25,7 +27,7 @@ def visualize_spikes(monitors, x):
         # s.shape: [batch_size, time, n_dim]
         spikes[layer] = s[0].cpu()
 
-    ims, axes = plot_spikes(spikes, figsize=(16,9))
+    ims, axes = plot_spikes(spikes, figsize=(16, 9))
 
     time = spikes["l2"].size(0)
     time_per_patch = time / n_patches
@@ -54,6 +56,7 @@ def visualize_image(image):
     fig, ax = plt.subplots()
     ax.imshow(image)
 
+
 def visualize_patches(x, patch_shape):
     positions = x["positions"].cpu()  # (batch_size, n_patches, 2|4)
     patches = x["patches"].cpu()  # (batch_size, n_patches, input_size)
@@ -62,13 +65,13 @@ def visualize_patches(x, patch_shape):
     if batch_size != 1:
         print(f"Batch size >1 detected ({batch_size}), only visualizing first image")
     positions = positions[0]
-    patches = patches[0].view(n_patches, -1, *patch_shape).permute(0,2,3,1) # channels last
+    patches = patches[0].view(n_patches, -1, *patch_shape).permute(0, 2, 3, 1)  # channels last
     n_patch_rows = int(np.sqrt(n_patches))
     n_patch_cols = int(np.ceil(n_patches / n_patch_rows))
-    fig, axes = plt.subplots(n_patch_rows, n_patch_cols, figsize=(14,14))
+    fig, axes = plt.subplots(n_patch_rows, n_patch_cols, figsize=(14, 14))
     for i, patch in enumerate(patches):
         row = i // n_patch_rows
-        col = (i - row*n_patch_cols)
+        col = i - row * n_patch_cols
         ax = axes[row, col]
         ax.imshow(patch)
         pos = positions[i]
@@ -77,15 +80,28 @@ def visualize_patches(x, patch_shape):
 
     fig.tight_layout()
 
+
 def visualize_filter_weights(network):
-    filter_weights = network.connections[("input", "filter")].w # (c*h*w, n_filters)
+    filter_weights = network.connections[("input", "filter")].w  # (c*h*w, n_filters)
     patch_shape = network.patch_shape
     n_filters = filter_weights.size(1)
     filter_weights = filter_weights.view(-1, *patch_shape, n_filters)
-    filter_weights = filter_weights.permute(3,0,1,2) # (n, c, h, w)
+    filter_weights = filter_weights.permute(3, 0, 1, 2).cpu()  # (n, c, h, w)
+    if filter_weights.size(1) == 1:
+        # one channel, cmap it
+        cmap = get_cmap("bwr")
+
+        # working around weird bug in cmap -- first image comes out blank...
+        filter_weights = torch.cat(
+            [torch.zeros_like(filter_weights[0]).unsqueeze(0), filter_weights]
+        )
+        filter_weights = cmap(filter_weights.squeeze(1))[1:]
+        filter_weights = filter_weights[:, :, :, :3]  # just rgb, no a
+        filter_weights = torch.Tensor(filter_weights).permute(0, 3, 1, 2)
+
+    # grid = make_grid(filter_weights, normalize=True, range=(-1, 1))
     grid = make_grid(filter_weights)
 
     fig, ax = plt.subplots()
     ax.set_axis_off()
-    ax.imshow(grid.permute(1,2,0).cpu())
-
+    ax.imshow(grid.permute(1, 2, 0).cpu())
