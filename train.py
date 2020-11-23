@@ -4,7 +4,7 @@ from datetime import datetime
 
 import torch
 from matplotlib import pyplot as plt
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 from datasets import make_emnist
@@ -50,32 +50,38 @@ from bindsnet.network import load
 @click.option("--n_l1_features", default=64, show_default=True)
 @click.option("--n_l2_features", default=64, show_default=True)
 @click.option(
-    "--vis_val_images",
+    "--vis_images/--no_vis_images",
     default=True,
     show_default=True,
-    is_flag=True,
     help="Show images for each image during validation visualization",
 )
 @click.option(
-    "--vis_val_spikes",
+    "--vis_spikes/--no_vis_spikes",
     default=True,
     show_default=True,
     is_flag=True,
     help="Show spikes for each image during validation visualization",
 )
 @click.option(
-    "--vis_filters",
+    "--vis_filters/--no_vis_filters",
     default=True,
     show_default=True,
     is_flag=True,
     help="Visualize filter weights during validation visualization",
 )
 @click.option(
-    "--vis_val_patches",
+    "--vis_patches/--no_vis_patches",
     default=False,
     show_default=True,
     is_flag=True,
     help="Show image patches for each image during validation visualization",
+)
+@click.option(
+    "--val_classify/--no_val_classify",
+    default=True,
+    show_default=True,
+    is_flag=True,
+    help="Train and evaluate classifier on L2 outputs",
 )
 @click.option(
     "--save/--no_save",
@@ -90,6 +96,11 @@ from bindsnet.network import load
     default=True,
     show_default=True,
     help="Run the train loop",
+)
+@click.option(
+    "--n_batches_for_classifier",
+    default=3,
+    help="Number of batches to use for training the L2 classifier",
 )
 def main(**kwargs):
     kwargs["time_per_patch"] = 10
@@ -134,31 +145,39 @@ def main(**kwargs):
 
     ##### TRAIN #####
     # the dataloaders have to be out here for pickling for some reason
+    train_dataloader = DataLoader(
+        Subset(train_data, range(kwargs["n_train"])),
+        batch_size=kwargs["batch_size"],
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=device == "cuda",
+    )
     if kwargs["do_train"]:
-        train_dataloader = DataLoader(
-            train_data,
-            batch_size=kwargs["batch_size"],
-            shuffle=True,
-            num_workers=num_workers,
-            pin_memory=device == "cuda",
-        )
         train_network(network, train_dataloader, kwargs)
+
+    if kwargs["val_classify"]:
+        make_classifier(network, train_dataloader, kwargs)
 
     #### VALIDATION AND VISUALIZATION #####
     print("Validation")
     val_dataloader = DataLoader(
-        val_data, batch_size=1, shuffle=True, num_workers=num_workers, pin_memory=device == "cuda"
+        Subset(val_data, range(kwargs["n_val"])),
+        batch_size=1,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=device == "cuda",
     )
     validate_network(network, val_dataloader, kwargs)
 
 
-def train_network(network, train_dataloader, kwargs):
+def train_network(network: Prototype1, train_dataloader: DataLoader, kwargs: dict):
     network.train(True)
+    print("Training...")
     for epoch in range(kwargs["n_epochs"]):
         for step, batch in enumerate(tqdm(train_dataloader)):
             # Get next input sample.
-            if kwargs["n_train"] is not None and step >= kwargs["n_train"] / kwargs["batch_size"]:
-                break
+            # if kwargs["n_train"] is not None and step >= kwargs["n_train"] / kwargs["batch_size"]:
+            #     break
             x, y = batch  # x: (batch, channels, height, width), y: (batch,)
             if kwargs["device"] == "cuda":
                 x = {k: v.cuda() for k, v in x.items()}
@@ -174,29 +193,65 @@ def train_network(network, train_dataloader, kwargs):
         network.save(os.path.join(save_dir, datetime.now().strftime("%d_%m_%y-%H_%M_%S.model")))
 
 
-def validate_network(network, val_dataloader, kwargs):
+def make_classifier(network: Prototype1, train_dataloader: DataLoader, kwargs: dict):
     network.train(False)
+    print("Making classifier...")
+    classifier_agg_l2, classifier_y = [], []
+
+    for step, batch in enumerate(tqdm(train_dataloader)):
+        if step >= kwargs["n_batches_for_classifier"]:
+            break
+        x, y = batch  # x: (batch, channels, height, width), y: (batch,)
+
+        if kwargs["device"] == "cuda":
+            x = {k: v.cuda() for k, v in x.items()}
+        # collect some outputs for the classifier to train on
+        _, agg_l2_outputs = network.run(
+            x, time_per_patch=kwargs["time_per_patch"], monitor_spikes=True
+        )
+        classifier_agg_l2.append(agg_l2_outputs)
+        classifier_y.append(y)
+    classifier_agg_l2 = torch.cat(classifier_agg_l2).cpu()
+    classifier_y = torch.cat(classifier_y).cpu()
+    network.build_classifier(classifier_agg_l2, classifier_y)
+
+
+def validate_network(network: Prototype1, val_dataloader: DataLoader, kwargs: dict):
+    network.train(False)
+    print("Validating...")
+    classifier_agg_l2, classifier_y = [], []
+
     if kwargs["vis_filters"]:
         visualize_filter_weights(network)
         plt.show()
     for step, batch in enumerate(tqdm(val_dataloader)):
         # Get next input sample.
-        if step >= kwargs["n_val"]:
-            break
+        # if step >= kwargs["n_val"]:
+        #     break
         x, y = batch  # x: (batch, channels, height, width), y: (batch,)
         if kwargs["device"] == "cuda":
             x = {k: v.cuda() for k, v in x.items()}
         # Run the network on the input.
-        layer_monitors = network.run(
+        layer_monitors, agg_l2_outputs = network.run(
             x, time_per_patch=kwargs["time_per_patch"], monitor_spikes=True
         )
-        if kwargs["vis_val_images"]:
+        if kwargs["vis_images"]:
             visualize_image(x["image"])
-        if kwargs["vis_val_spikes"]:
+        if kwargs["vis_spikes"]:
             visualize_spikes(layer_monitors, x)
-        if kwargs["vis_val_patches"]:
+        if kwargs["vis_patches"]:
             visualize_patches(x, kwargs["patch_shape"])
         plt.show()
+        classifier_agg_l2.append(agg_l2_outputs)
+        classifier_y.append(y)
+    classifier_agg_l2 = torch.cat(classifier_agg_l2).cpu()
+    classifier_y = torch.cat(classifier_y).cpu()
+
+    if kwargs["val_classify"]:
+        print(
+            "Classifier validation accuracy",
+            network.classifier.score(classifier_agg_l2, classifier_y),
+        )
 
 
 if __name__ == "__main__":

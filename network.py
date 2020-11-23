@@ -1,11 +1,14 @@
 from operator import pos
 import numpy as np
 import torch
+import torch.nn.functional as F
 from bindsnet.network import Network
 from bindsnet.network.nodes import Input, LIFNodes, AdaptiveLIFNodes, Nodes
 from bindsnet.network.topology import Connection
 from bindsnet.network.monitors import NetworkMonitor, Monitor
 from bindsnet.learning import PostPre
+from sklearn.linear_model import LogisticRegression
+
 
 class Prototype1(Network):
     def __init__(
@@ -17,7 +20,7 @@ class Prototype1(Network):
         n_l2_features,
         dt=1,
         use_4_position=True,
-        nu=1e-4
+        nu=1e-4,
     ):
         """
 
@@ -37,11 +40,11 @@ class Prototype1(Network):
 
         """
         super().__init__(dt=dt)
-        INH_WEIGHT = 1
+        INH_WEIGHT = 0
         THRESH = -63
         NORM_FILTER = 5
         NORM_L1 = 15
-        NORM_L2 = 100
+        NORM_L2 = 15
         ADAPTIVE = False
         input_size = np.prod([n_input_channels, *patch_shape])
         position_size = 4 if use_4_position else 2
@@ -132,7 +135,26 @@ class Prototype1(Network):
             self._patch_reset()  # reset all voltages
         self._batch_reset()  # reset all voltages including L2, and clear monitors
 
-        return monitors
+        if monitor_spikes:
+            agg_l2_outputs = monitors["l2"].get("s").sum(dim=0)  # sum spikes over time
+            agg_l2_outputs = F.softmax(agg_l2_outputs.float(), dim=1)
+            # agg_l2_outputs.shape = (batch_size, n_l2_features)
+            assert agg_l2_outputs.shape == (batch_size, self.layers["l2"].n)
+            return monitors, agg_l2_outputs
+
+    def build_classifier(self, agg_l2_outputs, y):
+        assert len(agg_l2_outputs.shape) == 2
+        assert len(agg_l2_outputs) == len(y)
+        agg_l2_outputs = agg_l2_outputs.cpu().numpy()
+        y = y.cpu().numpy()
+        classifier = LogisticRegression(random_state=42, class_weight="balanced", n_jobs=-1)
+        classifier.fit(agg_l2_outputs, y)
+        print("Logistic regression train accuracy:", classifier.score(agg_l2_outputs, y))
+        self.classifier = classifier
+
+    def classify(self, agg_l2_outputs):
+        assert hasattr(self, "classifier"), "Please call build_classifier first."
+        return self.classifier.predict(agg_l2_outputs)
 
     def _patch_reset(self):
         """Reset all variables except L2"""
@@ -152,22 +174,6 @@ class Prototype1(Network):
             self.connections[connection].reset_state_variables()
 
         self.monitors = {}  # clear list of monitors each batch
-
-    # def to(self, *args, **kwargs):
-    #     # mmm, fixing library bugs
-    #     for k, rec in self.monitor.recording.items():
-    #         for v in rec:
-    #             self.monitor.recording[k][v] = self.monitor.recording[k][v].to(
-    #                 *args, **kwargs
-    #             )
-    #     return super().to(*args, **kwargs)
-
-    # def reset_state_variables(self):
-    #     """Reset all state variables. Replaces buggy library version"""
-    #     self._sample_reset()
-    #     for k, rec in self.monitor.recording.items():
-    #         for v in rec:
-    #             self.monitor.recording[k][v] = torch.Tensor().to(self.monitor.recording[k][v].device)
 
 
 class ClampingNodes(AdaptiveLIFNodes):
