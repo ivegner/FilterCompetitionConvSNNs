@@ -145,8 +145,14 @@ def main(**kwargs):
 
     ##### TRAIN #####
     # the dataloaders have to be out here for pickling for some reason
+    if kwargs["n_train"] is not None:
+        train_data = Subset(train_data, range(kwargs["n_train"]))
+    if kwargs["n_val"] is not None:
+        val_data = Subset(train_data, range(kwargs["n_val"]))
+
+
     train_dataloader = DataLoader(
-        Subset(train_data, range(kwargs["n_train"])),
+        train_data,
         batch_size=kwargs["batch_size"],
         shuffle=True,
         num_workers=num_workers,
@@ -161,7 +167,7 @@ def main(**kwargs):
     #### VALIDATION AND VISUALIZATION #####
     print("Validation")
     val_dataloader = DataLoader(
-        Subset(val_data, range(kwargs["n_val"])),
+        val_data,
         batch_size=1,
         shuffle=True,
         num_workers=num_workers,
