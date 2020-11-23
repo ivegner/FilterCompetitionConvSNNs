@@ -40,11 +40,11 @@ class Prototype1(Network):
 
         """
         super().__init__(dt=dt)
-        INH_WEIGHT = 0
+        INH_WEIGHT = 1
         THRESH = -63
         NORM_FILTER = 5
         NORM_L1 = 15
-        NORM_L2 = 15
+        NORM_L2 = 100
         ADAPTIVE = False
         input_size = np.prod([n_input_channels, *patch_shape])
         position_size = 4 if use_4_position else 2
@@ -81,7 +81,7 @@ class Prototype1(Network):
 
         # Inhibitory connections
         inh_filter_connection = Connection(
-            filter_layer, filter_layer, w=INH_WEIGHT * (torch.eye(filter_layer.n) - 1)
+            filter_layer, filter_layer, w=0*INH_WEIGHT * (torch.eye(filter_layer.n) - 1)
         )
         inh_l1_connection = Connection(
             feature_l1, feature_l1, w=INH_WEIGHT * (torch.eye(feature_l1.n) - 1)
