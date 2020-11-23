@@ -7,16 +7,67 @@ from bindsnet.encoding import PoissonEncoder
 from torch.utils.data import DataLoader, random_split
 from torchvision.datasets import EMNIST
 from torchvision.transforms.transforms import Lambda, ToTensor, Compose
+from PIL import Image
+
 TRAIN_FRAC, TEST_FRAC = 0.8, 0.2
+
+
+class CachingEMNIST(EMNIST):
+    def __init__(self, *args, **kwargs):
+        self.patch_kwargs = kwargs.pop("patch_kwargs")
+        super().__init__(*args, **kwargs)
+        self.save_folder = os.path.join(self.root, "EMNIST", "encoded")
+        os.makedirs(self.save_folder, exist_ok=True)
+        self.kwarg_string = "_".join(
+            f"{k}={v}".replace(" ", "") for k, v in self.patch_kwargs.items()
+        )
+
+    @property
+    def raw_folder(self) -> str:
+        return os.path.join(self.root, "EMNIST", "raw")
+
+    @property
+    def processed_folder(self) -> str:
+        return os.path.join(self.root, "EMNIST", "processed")
+
+    def __getitem__(self, index: int):
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (image, target) where target is index of the target class.
+        """
+        img, target = self.data[index], int(self.targets[index])
+
+        # doing this so that it is consistent with all other datasets
+        # to return a PIL Image
+        os.makedirs(self.save_folder, exist_ok=True)
+        path_to_save = os.path.join(self.save_folder, f"{index}_{self.kwarg_string}.pt")
+        if os.path.exists(path_to_save):
+            img = torch.load(path_to_save)
+        else:
+            img = Image.fromarray(img.numpy(), mode="L")
+
+            if self.transform is not None:
+                img = self.transform(img)
+            torch.save(img, path_to_save)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img, target
+
 
 def make_emnist(split="balanced", **patch_kwargs):
     patch_encoder = PatchEncoder(**patch_kwargs)
-    dataset = EMNIST(
+    dataset = CachingEMNIST(
         os.path.join(os.path.dirname(__file__), "data"),
         split=split,
         download=True,
         train=True,
         transform=Compose([ToTensor(), Lambda(patch_encoder)]),
+        patch_kwargs=patch_kwargs,
     )
     train_len = round(len(dataset) * TRAIN_FRAC)
     val_len = len(dataset) - train_len
@@ -69,19 +120,25 @@ class PatchEncoder:
         # the images are in matplotlib format (channels, rows, columns)
         # but patches are apparently made as (x,y), which would be (columns, rows)
         # thus, transpose the patches to correspond to (rows, columns)
-        x_t = x.transpose(1,2)
+        x_t = x.transpose(1, 2)
         # dilation not implemented
-        patches = F.unfold(x_t.unsqueeze(0), kernel_size=self.patch_shape, padding=PADDING, stride=STRIDE)
+        patches = F.unfold(
+            x_t.unsqueeze(0), kernel_size=self.patch_shape, padding=PADDING, stride=STRIDE
+        )
         patches = patches.squeeze(0)
         n_patches = patches.shape[-1]
-        patches = patches.transpose(0,1) # (n_patches, input_size)
+        patches = patches.transpose(0, 1)  # (n_patches, input_size)
 
-        patch_positions = get_im2col_indices(x.shape, patch_h, patch_w, padding=PADDING, stride=STRIDE)
+        patch_positions = get_im2col_indices(
+            x.shape, patch_h, patch_w, padding=PADDING, stride=STRIDE
+        )
         # normalize positions to [0,1]
         patch_positions /= torch.max(patch_positions, axis=0, keepdim=True)[0]  # (n_patches, 2)
         if self.use_4_position:
             inv_patch_positions = 1 - patch_positions
-            patch_positions = torch.cat([patch_positions, inv_patch_positions], dim=1)  # (n_patches, 4)
+            patch_positions = torch.cat(
+                [patch_positions, inv_patch_positions], dim=1
+            )  # (n_patches, 4)
         assert len(patch_positions) == n_patches
 
         # encode each patch separately
@@ -91,7 +148,9 @@ class PatchEncoder:
         encoded_patches = encoded_patches.view(n_patches, self.time_per_patch, input_size)
 
         # encode positions
-        encoded_positions = torch.stack([encoder(p * self.position_intensity) for p in patch_positions])
+        encoded_positions = torch.stack(
+            [encoder(p * self.position_intensity) for p in patch_positions]
+        )
         # encoded_positions: (n_patches, time, 2|4)
 
         return dict(
@@ -99,7 +158,7 @@ class PatchEncoder:
             encoded_patches=encoded_patches,
             positions=patch_positions,
             encoded_positions=encoded_positions,
-            image=x
+            image=x,
         )
 
 
